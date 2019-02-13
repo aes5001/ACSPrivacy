@@ -108,3 +108,5 @@ CSPrivacy.code-workspace
 .vscode/settings.json
 directions.txt
 directions.temp
+directions.temp.waypoints
+places.temp

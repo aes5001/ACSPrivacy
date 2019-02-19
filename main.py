@@ -1,7 +1,6 @@
 import googlemaps
 import pickle
 import polyline
-import re
 
 
 def readGoogleAPI():
@@ -28,19 +27,22 @@ def getTempData(filename):
     with open(filename + '.temp', 'rb') as f:
         data_file = pickle.load(f)
         f.close()
-    print("Directions loaded from " + filename + ".temp in working directory")
+    print("Data loaded from " + filename + ".temp in working directory")
     return data_file
 
 
-def getDirections(api_key):
+def getDirections(origin_addr, destination_addr, waypoints_list):
     """get directions with help of Google Maps API"""
 
-    gmaps = googlemaps.Client(key=api_key, queries_per_second=10)
-    directions_result = gmaps.directions(origin="Kumpulan kampus, 00560 Helsinki",
-                                         destination="Sello, Leppävaarankatu 3-9, 02600 Espoo",
+    origin_addr = str(origin_addr)
+    destination_addr = str(destination_addr)
+    waypoints_list = list(waypoints_list)
+
+    gmaps = googlemaps.Client(key=readGoogleAPI(), queries_per_second=10)
+    directions_result = gmaps.directions(origin=origin_addr,
+                                         destination=destination_addr,
                                          mode="driving", alternatives="true", units="metric",
-                                         waypoints=["Linnanmaki, Tivolikuja 1, 00510 Helsinki", 
-                                         "Rush Helsinki, Valimotie 25, 00380 Helsinki"])
+                                         waypoints=waypoints_list)
     # directions_result = gmaps.directions(origin="Kumpulan kampus, 00560 Helsinki",
     #                                      destination="Sello, Leppävaarankatu 3-9, 02600 Espoo",
     #                                      mode="driving", alternatives="true", units="metric",
@@ -49,6 +51,11 @@ def getDirections(api_key):
     print("Directions received from Google")
     return directions_result
 
+# waylist = ["Linnanmaki, Tivolikuja 1, 00510 Helsinki", 
+#                                          "Rush Helsinki, Valimotie 25, 00380 Helsinki"]
+# direct = getDirections("Kumpulan kampus, 00560 Helsinki", 
+# "Sello, Leppävaarankatu 3-9, 02600 Espoo",
+# waylist)
 
 def inTimeDirections(directions, tracking_interval):
     """get only directions that are fit to the tracking interval. 
@@ -75,29 +82,93 @@ def decodePolylines(directions):
     print("Polyline decoded successfully")           
     return directions
 
-def getNearPOI(api_key, directions):
+def getNearPOI(location, max_radius):
     """get near POI from coordinates"""
-    gmaps = googlemaps.Client(key=api_key, queries_per_second=10)
-    place = gmaps.places_nearby(location='60.21255,24.88626',                         
-                            language='en-US',
-                            radius = 100)
-    print("Nearby places are available")
-    return place
+
+    gmaps = googlemaps.Client(key = readGoogleAPI(), queries_per_second = 10)
+    places = gmaps.places_nearby(location=location,                         
+                                        language='en-US',
+                                        radius = max_radius)
+    # print("Nearby places are available")
+    return places
+
+
+def getNearPOIPolylines(directions, max_radius):
+    """get POI for coordinates"""
+
+    for i in range(len(directions)): 
+        directions[i]['polyline_coor_POI'] = list()
+        next_j = 0
+        for j in range(len(directions[i]['polyline_coordinates'])):
+            location = str(directions[i]['polyline_coordinates'][j][0]) + ',' + str(directions[i]['polyline_coordinates'][j][1])
+
+            # coordinates = list(directions[i]['polyline_coordinates'][j])
+            coordinates = directions[i]['polyline_coordinates'][j]
+            # places = [1,2,3]
+            # directions[i]['polyline_coor_POI'].append([tuple(coordinates)]+[places])
+           
+
+            if j == 0:
+                places = getNearPOI(location, max_radius)
+                directions[i]['polyline_coor_POI'].append([tuple(coordinates)]+[places])
+
+            distance_lat = directions[i]['polyline_coordinates'][next_j][0] - directions[i]['polyline_coordinates'][j][0]
+            distance_lon = directions[i]['polyline_coordinates'][next_j][1] - directions[i]['polyline_coordinates'][j][1]
+            
+            distance_lat = abs(distance_lat)
+            distance_lat = round(distance_lat, 6)
+
+            distance_lon = abs(distance_lon)
+            distance_lon = round(distance_lon, 6)
+            
+            if distance_lat > 0.020 or distance_lon > 0.020: #distance between POIs by default 0.005
+                next_j = j
+                places = getNearPOI(location, max_radius)
+                directions[i]['polyline_coor_POI'].append([tuple(coordinates)]+[places])
+            
+    saveTempData(directions, 'nearbyPOI')
+    print("Nearby POIs are downloaded")
+    return directions
+
+
+def filterPOI():
+    """select only POI that can be visited during free time"""
+    directions = getTempData('nearbyPOI')
+    for i in range(len(directions)):
+        for j in range(len(directions[i]['polyline_coor_POI'])): 
+            directions[i]['polyline_coor_POI'][j][1] = directions[i]['polyline_coor_POI'][j][1]['results']
+    saveTempData(directions, 'nearbyPOI')
+    return('POIs were filtered')
+
+filterPOI()
+
+def getDirectionViaPOI(directions):
+    """getDirection via POI to find if the path is in time"""
+    
+    for i in range(len(directions)):
+        points = directions[i]['polyline_coor_POI']
+        waypoints_list = list()
+
+            # poi = points[1][1]['results'][1]['place_id']
+            # waypoints_list = [directions[0]['polyline_coor_POI'][3][1]['results'][2]['place_id']]
+    return directions
 
 
 tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
-places = getTempData('places')
+directions = getTempData('nearbyPOI') #download the last data
 
-directions = decodePolylines(getTempData('directions'))
+# places = getTempData('places')
 
+dirViaPOI = getDirectionViaPOI(directions)
 
-
-# getNearPOI(readGoogleAPI(), directions)
-# directions = inTimeDirections(getTempDirections(), tracking_interval)
-
+# directions = inTimeDirections(getTempData('directions'), tracking_interval)
+# directions = decodePolylines(getTempData('directions'))
+# directions = getNearPOIPolylines(directions, 1000)
 #############################################
 """get Direction and save them to temp file (useful to reduce amount of requests)"""
 # saveTempData(getDirections(readGoogleAPI()), 'directions')
-# saveTempData(getNearPOI(readGoogleAPI(), directions), 'places')
+
+# directions = decodePolylines(getTempData('directions'))
+# saveTempData(getNearPOIPolylines(directions), 'places')
 #############################################

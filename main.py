@@ -140,19 +140,39 @@ def filterPOI():
     saveTempData(directions, 'nearbyPOI')
     return('POIs were filtered')
 
-filterPOI()
+def getPOIType(type_POI):
+    """Find POI type"""
 
-def getDirectionViaPOI(directions):
-    """getDirection via POI to find if the path is in time"""
+    for i in range(len(type_POI)):
+        if type_POI[i] == 'shopping_mall' or type_POI[i] == 'restaurant':
+            return True
+    return False
+
+def getWaypointsForPOI(directions):
+    """get waypoints for each POI"""
     
+    waypoint_list = list()
     for i in range(len(directions)):
-        points = directions[i]['polyline_coor_POI']
-        waypoints_list = list()
+        origin_addr = directions[i]['legs'][0]['start_address'] #update to directions without waypoints
+        destination_addr = directions[i]['legs'][2]['end_address'] #update to directions without waypoints
+        for j in range(len(directions[i]['polyline_coor_POI'])):
+            for k in range(len(directions[i]['polyline_coor_POI'][j][1])):
+                if getPOIType(directions[i]['polyline_coor_POI'][j][1][k]['types']):
+                    waypoint = directions[i]['polyline_coor_POI'][j][1][k]['place_id']
+                    waypoint_list.append(waypoint)
+                    # getDirections(origin_addr, destination_addr, waypoint)
+                
+    destination_wayp_list = [origin_addr, destination_addr, waypoint_list]
+    saveTempData(destination_wayp_list,'dest_wayp_list')
+    print("Potential waypoints were obtained")
+    return destination_wayp_list
 
-            # poi = points[1][1]['results'][1]['place_id']
-            # waypoints_list = [directions[0]['polyline_coor_POI'][3][1]['results'][2]['place_id']]
-    return directions
+def getDestinationViaPOI (destination_list):
+    """get all routes via POI"""
+    for i in range(len(destination_list[2])):
+        destination = getDirections(destination_list[0], destination_list[1], destination_list[2][i])
 
+    return destination_list
 
 tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
@@ -160,7 +180,7 @@ directions = getTempData('nearbyPOI') #download the last data
 
 # places = getTempData('places')
 
-dirViaPOI = getDirectionViaPOI(directions)
+destinations_POI = getWaypointsForPOI(directions)
 
 # directions = inTimeDirections(getTempData('directions'), tracking_interval)
 # directions = decodePolylines(getTempData('directions'))

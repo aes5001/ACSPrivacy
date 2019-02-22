@@ -36,7 +36,7 @@ def getDirections(origin_addr, destination_addr, waypoints_list):
 
     origin_addr = str(origin_addr)
     destination_addr = str(destination_addr)
-    waypoints_list = list(waypoints_list)
+    # waypoints_list = list(waypoints_list)
 
     gmaps = googlemaps.Client(key=readGoogleAPI(), queries_per_second=10)
     directions_result = gmaps.directions(origin=origin_addr,
@@ -51,26 +51,34 @@ def getDirections(origin_addr, destination_addr, waypoints_list):
     print("Directions received from Google")
     return directions_result
 
-# waylist = ["Linnanmaki, Tivolikuja 1, 00510 Helsinki", 
-#                                          "Rush Helsinki, Valimotie 25, 00380 Helsinki"]
-# direct = getDirections("Kumpulan kampus, 00560 Helsinki", 
-# "Sello, Leppävaarankatu 3-9, 02600 Espoo",
-# waylist)
+# getDirections(origin_addr, destination_addr, waypoints_list)
 
 def inTimeDirections(directions, tracking_interval):
     """get only directions that are fit to the tracking interval. 
     Also find a free time that could be used to visit to POI"""
 
-    available_directions = []
-    for i in range(len(directions)): 
-        # TODO waypoint/legs processing (multiplying)
-        for j in directions[i]['legs']:
-            duration = j['duration']['value']
+    available_directions = list ()
+    duration = 0
 
+    for i in range(len(directions)):
+        duration = 0
+        if len(directions[i]['legs']) == 1:
+                duration = directions[i]['legs']['duration']['value']
+                if duration < tracking_interval:
+                    directions[i]['overview_free_time'] = tracking_interval - duration
+                    available_directions.append(directions[i])
+        else:
+            for j in range(len(directions[i]['legs'])):
+                duration += directions[i]['legs'][j]['duration']['value']
+               
             if duration < tracking_interval:
-                # directions[i]['overview_time'] = 0
-                directions[i]['overview_free_time'] = tracking_interval - duration 
+                directions[i]['overview_free_time'] = tracking_interval - duration
                 available_directions.append(directions[i])
+        
+    if available_directions > 0:
+        print("In time directions were found")
+    else:
+        print("No in time directions were found")
     return available_directions
 
 
@@ -159,7 +167,7 @@ def getWaypointsForPOI(directions):
             for k in range(len(directions[i]['polyline_coor_POI'][j][1])):
                 if getPOIType(directions[i]['polyline_coor_POI'][j][1][k]['types']):
                     waypoint = directions[i]['polyline_coor_POI'][j][1][k]['place_id']
-                    waypoint_list.append(waypoint)
+                    waypoint_list.append("place_id:" + waypoint)
                     # getDirections(origin_addr, destination_addr, waypoint)
                 
     destination_wayp_list = [origin_addr, destination_addr, waypoint_list]
@@ -169,18 +177,22 @@ def getWaypointsForPOI(directions):
 
 def getDestinationViaPOI (destination_list):
     """get all routes via POI"""
-    for i in range(len(destination_list[2])):
-        destination = getDirections(destination_list[0], destination_list[1], destination_list[2][i])
 
-    return destination_list
+    destination = list()
+    for i in range(len(destination_list[2])):
+        destination.extend(getDirections(destination_list[0], destination_list[1], destination_list[2][i]))
+    saveTempData(destination,'potential_dest')
+      
+    print("Potential directions via POI received")
+    return destination
 
 tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
-directions = getTempData('nearbyPOI') #download the last data
-
+# directions = getTempData('nearbyPOI') #download the last data
+# directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
 # places = getTempData('places')
-
-destinations_POI = getWaypointsForPOI(directions)
+destinations = getDestinationViaPOI(getTempData('dest_wayp_list'))
+# destinations_POI = getWaypointsForPOI(getTempData('nearbyPOI'))
 
 # directions = inTimeDirections(getTempData('directions'), tracking_interval)
 # directions = decodePolylines(getTempData('directions'))

@@ -1,6 +1,7 @@
 import googlemaps
 import pickle
 import polyline
+from time import sleep
 
 
 def readGoogleAPI():
@@ -90,19 +91,32 @@ def decodePolylines(directions):
     print("Polyline decoded successfully")           
     return directions
 
-def getNearPOI(location, max_radius):
+def getNearPOI(location, max_radius, allpages=False):
     """get near POI from coordinates"""
-
+    
     gmaps = googlemaps.Client(key = readGoogleAPI(), queries_per_second = 10)
-    places = gmaps.places_nearby(location=location,                         
-                                        language='en-US',
+    places = gmaps.places_nearby(location = location,                         
+                                        language = 'en-US',
                                         radius = max_radius)
+
+    if places['next_page_token']:
+        all_results = list()
+        all_results.extend(places['results'])                                               
+        try:
+            while places['next_page_token']:
+                sleep(3) # Google maps needs a time to create the next POI page
+                places = gmaps.places_nearby(page_token = places['next_page_token'])
+                all_results.extend(places['results'])  
+        except:
+            places['results'] = all_results
+          
     # print("Nearby places are available")
     return places
 
+getNearPOI('60.204028, 24.962573',1000)
 
 def getNearPOIPolylines(directions, max_radius):
-    """get POI for coordinates"""
+    """get POI for polyline coordinates (polyline points)"""
 
     for i in range(len(directions)): 
         directions[i]['polyline_coor_POI'] = list()
@@ -110,11 +124,9 @@ def getNearPOIPolylines(directions, max_radius):
         for j in range(len(directions[i]['polyline_coordinates'])):
             location = str(directions[i]['polyline_coordinates'][j][0]) + ',' + str(directions[i]['polyline_coordinates'][j][1])
 
-            # coordinates = list(directions[i]['polyline_coordinates'][j])
             coordinates = directions[i]['polyline_coordinates'][j]
             # places = [1,2,3]
             # directions[i]['polyline_coor_POI'].append([tuple(coordinates)]+[places])
-           
 
             if j == 0:
                 places = getNearPOI(location, max_radius)
@@ -157,7 +169,7 @@ def getPOIType(type_POI):
     return False
 
 def getWaypointsForPOI(directions):
-    """get waypoints for each POI"""
+    """select potential waypoints from obtained list of POIs with help of getPOIType()"""
     
     waypoint_list = list()
     for i in range(len(directions)):
@@ -189,9 +201,9 @@ def getDestinationViaPOI (destination_list):
 tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
 # directions = getTempData('nearbyPOI') #download the last data
-# directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
+directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
 # places = getTempData('places')
-destinations = getDestinationViaPOI(getTempData('dest_wayp_list'))
+# destinations = getDestinationViaPOI(getTempData('dest_wayp_list'))
 # destinations_POI = getWaypointsForPOI(getTempData('nearbyPOI'))
 
 # directions = inTimeDirections(getTempData('directions'), tracking_interval)

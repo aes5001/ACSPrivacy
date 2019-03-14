@@ -3,7 +3,10 @@ import pickle
 import polyline
 from time import sleep
 import populartimes
-# import numpy as np
+
+import numpy as np
+import scipy.stats
+import matplotlib.pyplot as plt
 
 
 def readGoogleAPI():
@@ -44,7 +47,7 @@ def getDirections(origin_addr, destination_addr, waypoints_list=None):
     if waypoints_list is not None:
         directions_result = gmaps.directions(origin=origin_addr,
                                             destination=destination_addr,
-                                            mode="driving", alternatives="true", units="metric",
+                                            mode="driving", units="metric",
                                             waypoints=waypoints_list)
     else:
         directions_result = gmaps.directions(origin=origin_addr,
@@ -71,7 +74,7 @@ def inTimeDirections(directions, tracking_interval):
     for i in range(len(directions)):
         duration = 0
         if len(directions[i]['legs']) == 1:         #do if there is no waypoints
-                duration = directions[i]['legs']['duration']['value']
+                duration = directions[i]['legs'][0]['duration']['value'] 
                 if duration < tracking_interval:
                     directions[i]['overview_free_time'] = tracking_interval - duration
                     available_directions.append(directions[i])
@@ -89,6 +92,7 @@ def inTimeDirections(directions, tracking_interval):
         print("No in time directions were found")
     return available_directions
 
+# saveTempData(inTimeDirections(getTempData('nearbyPOIs'),3600),'nearbyPOITime')
 
 def decodePolylines(directions):
     """get coordinates from polylines"""
@@ -103,7 +107,6 @@ def addPopularTimes(places):
     """add popular times, time spend to polyline_coor_POI list"""
     
     for i in range(len(places['results'])): 
-        # places['results'][i] = list()
         pop_times_res = popTimes(places['results'][i]['place_id'])
         pop_times_fields = dict()
         d_items = list(['rating', 'rating_n', 'time_spent', 'populartimes', 'time_wait'])
@@ -200,49 +203,97 @@ def getPOIByType(POI_list, POI_type):
 
 
 def getWaypointsForPOI(directions):
-    """select (filter) potential waypoints from obtained list of POIs with help of getPOIByType(), remove all unnecessary data"""
+    """select (filter) potential waypoints from obtained list of POIs with help of getPOIByType(), 
+    remove all unnecessary data. Add only POIs that have "time_spent" info and are in free time intertval"""
     
     waypoint_list = list()
     for i in range(len(directions)):
         origin_addr = directions[i]['legs'][0]['start_address'] #update to directions without waypoints
-        destination_addr = directions[i]['legs'][2]['end_address'] #update to directions without waypoints
+        if len(directions[i]['legs']) == 1:
+            destination_addr = directions[i]['legs'][0]['end_address'] #for directions without waypoints
+        else:
+            destination_addr = directions[i]['legs'][2]['end_address'] #for directions with waypoints NEED TEST
         for j in range(len(directions[i]['polyline_coor_POI'])):
-            for k in range(len(directions[i]['polyline_coor_POI'][j][1])):
-                if getPOIByType(directions[i]['polyline_coor_POI'][j][1][k]['types'], ['shopping_mall', 'restaurant']):
-                   waypoint = directions[i]['polyline_coor_POI'][j][1][k]['place_id']
-                   waypoint_list.append("place_id:" + waypoint)
-                
+            for k in range(len(directions[i]['polyline_coor_POI'][j][1]['results'])):
+                if getPOIByType(directions[i]['polyline_coor_POI'][j][1]['results'][k]['types'], ['shopping_mall', 'restaurant']): #POI types
+                    if directions[i]['polyline_coor_POI'][j][1]['results'][k]['time_spent'] != -1:
+                        if directions[i]['polyline_coor_POI'][j][1]['results'][k]['time_spent'][0] < directions[i]['overview_free_time']:
+                            waypoint = directions[i]['polyline_coor_POI'][j][1]['results'][k]['place_id']
+                            types = directions[i]['polyline_coor_POI'][j][1]['results'][k]['types']
+                            time_spent = directions[i]['polyline_coor_POI'][j][1]['results'][k]['time_spent']
+                            populartimes = directions[i]['polyline_coor_POI'][j][1]['results'][k]['populartimes']
+                            waypoint_list.append(["place_id:" + waypoint, types, time_spent, populartimes])
+                    
+                    # else: #add POIs that do not have "time_spent" information
+                    #     waypoint = directions[i]['polyline_coor_POI'][j][1]['results'][k]['place_id']
+                    #     types = directions[i]['polyline_coor_POI'][j][1]['results'][k]['types']
+                    #     time_spent = directions[i]['polyline_coor_POI'][j][1]['results'][k]['time_spent']
+                    #     populartimes = directions[i]['polyline_coor_POI'][j][1]['results'][k]['populartimes']
+                    #     waypoint_list.append(["place_id:" + waypoint, types, time_spent, populartimes])
     destination_wayp_list = [origin_addr, destination_addr, waypoint_list]
     saveTempData(destination_wayp_list,'dest_wayp_list')
-    print("Potential waypoints were obtained")
+    print("Potential in time waypoints were obtained")
     return destination_wayp_list
 
 # destinations_POI = getWaypointsForPOI(getTempData('nearbyPOIs'))
+
 
 def getDestinationViaPOI (destination_list):
     """get all routes via POI for dest_wayp_list (getWaypointsForPOI) list presentation"""
 
     destination = list()
     for i in range(len(destination_list[2])):
-        destination.extend(getDirections(destination_list[0], destination_list[1], destination_list[2][i]))
+        destination.extend(getDirections(destination_list[0], destination_list[1], destination_list[2][i][0]))
+        destination[i]['waypoint_types']=destination_list[2][i][1]
+        destination[i]['time_spent']=destination_list[2][i][2]
+        destination[i]['populartimes']=destination_list[2][i][3]
     saveTempData(destination,'potential_dest')
       
     print("Potential directions via POI received")
     return destination
 
-def potentialVisitPOI (directions_in_time, visit_time):
+# getDestinationViaPOI(getTempData('dest_wayp_list'))
+
+def potentialVisitPOI (directions_in_time, visit_time=0):
     """calculate probability to visit a POI"""
 
     #TODO add POI type to directions for comparison
     for i in range(len(directions_in_time)):
-        # for j in range(len(visit_time)):
-        # for poi_type in visit_time.items():
-            dir = directions_in_time[i]['overview_free_time']
-            vis = visit_time.get('shopping_mall', 0) #read data from dict()
-            if directions_in_time[i]['overview_free_time'] >= visit_time.get('shopping_mall', 0):
-                print("POI can be visited")
+
+        
+        mean = np.mean(directions_in_time[i]['time_spent'])
+        std = np.std(directions_in_time[i]['time_spent'])
+        # variance = np.var(directions_in_time[i]['time_spent'])
+        free_time = directions_in_time[i]['overview_free_time']
+        pdf = scipy.stats.norm(mean,std).pdf(free_time)
+       
+        cdf = scipy.stats.norm(mean,std).cdf(free_time)
+        plt.hist(cdf, normed=True, cumulative=True, label='CDF',
+            histtype='step', alpha=0.8, color='k')
+        plt.show()
+        #draw plot
+        # pdf = np.random.normal(mean, std, 100)
+
+        count, bins, ignored = plt.hist(pdf, 30, density=True)
+        plt.plot(bins, 1/(std * np.sqrt(2 * np.pi)) * 
+            np.exp( - (bins - mean)**2 / (2 * std**2) ),
+            linewidth=2, color='r')
+        # plt.show()
+
+        # mu, sigma = 0, 0.1 # mean and standard deviation
+        # s = np.random.normal(mu, sigma, 1000)
+        # count, bins, ignored = plt.hist(s, 30, density=True)
+        
+        # plt.plot(bins, 1/(sigma * np.sqrt(2 * np.pi)) * 
+        #     np.exp( - (bins - mu)**2 / (2 * sigma**2) ),
+        #     linewidth=2, color='r')
+        # plt.show()
+        
+        # if directions_in_time[i]['overview_free_time'] >= visit_time.get('shopping_mall', 0):
+        #     print("POI can be visited")
 
     return directions_in_time
+
 
 def popTimes (placeID):
     """ Return popular time, rating, time spend with help of populartimes lib"""
@@ -252,28 +303,20 @@ def popTimes (placeID):
     return pop_times
 
 
-# places = addPopularTimes(getTempData('placesPOI'))
-
 tracking_interval = 3600 #tracking interval is seconds when vehicle position send to the vehicle owner
 POI_visit_time = {'shopping_mall': 1200, 'restaurant': 2400}
 
 # poptimes = popTimes("")
 
-# directions = getTempData('nearbyPOIs') #download the last data
-# directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
-# directions = potentialVisitPOI(directions, POI_visit_time) #calculate probability to visit POI
-
-# places = getTempData('places')
-# destinations = getDestinationViaPOI(getTempData('dest_wayp_list'))
-# destinations_POI = getWaypointsForPOI(getTempData('nearbyPOIs'))
-
-# directions = inTimeDirections(getTempData('directions'), tracking_interval)
-
 
 #############################################
 """get Direction and save them to temp file (useful to reduce amount of requests)"""
 # saveTempData(getDirections("Kumpulan kampus, 00560 Helsinki", "Sello, Leppävaarankatu 3-9, 02600 Espoo"), 'directions')
-directions = decodePolylines(getTempData('directions'))
-directions = getNearPOIPolylines(directions, 1000)
-
+# directions = inTimeDirections(getTempData('directions'), tracking_interval)
+# directions = decodePolylines(getTempData('directions'))
+# directions = getNearPOIPolylines(directions, 1000)
+# directions = getWaypointsForPOI(getTempData('nearbyPOIs'))
+# directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
+directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
+potentialVisitPOI(directions)
 #############################################

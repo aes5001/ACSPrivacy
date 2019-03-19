@@ -5,9 +5,10 @@ from time import sleep
 import populartimes
 
 import numpy as np
-import scipy.stats
+import scipy as sp
+from scipy import stats
 import matplotlib.pyplot as plt
-
+# from scipy.stats import entropy
 
 def readGoogleAPI():
     """read Google API key from the apikey.txt file"""
@@ -258,40 +259,29 @@ def potentialVisitPOI (directions_in_time, visit_time=0):
     """calculate probability to visit a POI"""
 
     #TODO add POI type to directions for comparison
-    for i in range(len(directions_in_time)):
+    all_probab = list()
+    for i in range(len(directions_in_time)): 
+        # free_time = directions_in_time[i]['overview_free_time']
+        free_time = 1800
+        x = list()
+        for j in range(directions_in_time[i]['time_spent'][0],directions_in_time[i]['time_spent'][1]+1):
+            x.append(j)
 
+        mean = np.mean(x)
+        std = np.std(x) 
+
+        if std != 0:
+            #Z-score calc
+            z = (free_time - mean) / std
+            probab = stats.norm.pdf(z)
+            #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
+            all_probab.append(probab)
+            print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
+        else:
+            print("Probability of visit is: 0.0%")
+
+        entropy = stats.entropy([1,1,1,1,1,1,1,1,1,1,1,1,1,1], base=2)
         
-        mean = np.mean(directions_in_time[i]['time_spent'])
-        std = np.std(directions_in_time[i]['time_spent'])
-        # variance = np.var(directions_in_time[i]['time_spent'])
-        free_time = directions_in_time[i]['overview_free_time']
-        pdf = scipy.stats.norm(mean,std).pdf(free_time)
-       
-        cdf = scipy.stats.norm(mean,std).cdf(free_time)
-        plt.hist(cdf, normed=True, cumulative=True, label='CDF',
-            histtype='step', alpha=0.8, color='k')
-        plt.show()
-        #draw plot
-        # pdf = np.random.normal(mean, std, 100)
-
-        count, bins, ignored = plt.hist(pdf, 30, density=True)
-        plt.plot(bins, 1/(std * np.sqrt(2 * np.pi)) * 
-            np.exp( - (bins - mean)**2 / (2 * std**2) ),
-            linewidth=2, color='r')
-        # plt.show()
-
-        # mu, sigma = 0, 0.1 # mean and standard deviation
-        # s = np.random.normal(mu, sigma, 1000)
-        # count, bins, ignored = plt.hist(s, 30, density=True)
-        
-        # plt.plot(bins, 1/(sigma * np.sqrt(2 * np.pi)) * 
-        #     np.exp( - (bins - mu)**2 / (2 * sigma**2) ),
-        #     linewidth=2, color='r')
-        # plt.show()
-        
-        # if directions_in_time[i]['overview_free_time'] >= visit_time.get('shopping_mall', 0):
-        #     print("POI can be visited")
-
     return directions_in_time
 
 
@@ -308,6 +298,45 @@ POI_visit_time = {'shopping_mall': 1200, 'restaurant': 2400}
 
 # poptimes = popTimes("")
 
+def testing_func():
+
+    # [900,2700]
+    
+    entropy = stats.entropy([1,1,1,1,1,1,1,1,1,1,1,1,1,1], base=2)
+    x = list()
+    for i in range(90,180+1):
+        x.append(i)
+    
+    mean = np.mean(x)
+    var = np.var(x)    
+    std = np.std(x)
+
+    free_time = 90
+    #Z-score calc
+    z = (free_time - mean) / std
+    probab = sp.stats.norm.pdf(z)
+   
+    #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
+    print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
+    
+    n = (180-90)
+    
+    free_time = 45
+    
+    pmf_binominal = stats.binom.pmf(free_time, n, 0.5)
+    pmf_poisson = stats.poisson.pmf(free_time, 45)
+   
+    plt.hist(probab, normed=True, cumulative=True, label='CDF',
+            histtype='step', alpha=0.8, color='k')
+    plt.show()
+      
+    count, bins, ignored = plt.hist(probab, 30, density=True)
+    plt.plot(bins, 1/(std * np.sqrt(2 * np.pi)) * 
+        np.exp( - (bins - mean)**2 / (2 * std**2) ),
+        linewidth=2, color='r')
+    plt.show()
+
+# testing_func()
 
 #############################################
 """get Direction and save them to temp file (useful to reduce amount of requests)"""
@@ -317,6 +346,6 @@ POI_visit_time = {'shopping_mall': 1200, 'restaurant': 2400}
 # directions = getNearPOIPolylines(directions, 1000)
 # directions = getWaypointsForPOI(getTempData('nearbyPOIs'))
 # directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
-directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
-potentialVisitPOI(directions)
+# directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
+potentialVisitPOI(getTempData('potential_dest'))
 #############################################

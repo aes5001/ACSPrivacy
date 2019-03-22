@@ -111,3 +111,4 @@ directions.temp.waypoints
 
 # ignore all temp files
 *.temp
+mtrand.pyx

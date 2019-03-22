@@ -255,33 +255,45 @@ def getDestinationViaPOI (destination_list):
 
 # getDestinationViaPOI(getTempData('dest_wayp_list'))
 
-def potentialVisitPOI (directions_in_time, visit_time=0):
-    """calculate probability to visit a POI"""
+def potentialVisitPOI (directions_in_time):
+    """calculate probability to visit POIs and overall entropy"""
 
-    #TODO add POI type to directions for comparison
     all_probab = list()
     for i in range(len(directions_in_time)): 
-        # free_time = directions_in_time[i]['overview_free_time']
-        free_time = 1800
-        x = list()
-        for j in range(directions_in_time[i]['time_spent'][0],directions_in_time[i]['time_spent'][1]+1):
-            x.append(j)
-
-        mean = np.mean(x)
-        std = np.std(x) 
-
-        if std != 0:
-            #Z-score calc
-            z = (free_time - mean) / std
-            probab = stats.norm.pdf(z)
-            #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
-            all_probab.append(probab)
-            print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
+        free_time = directions_in_time[i]['overview_free_time']
+        # free_time = 1800
+        minim = directions_in_time[i]['time_spent'][0] #we guess that Goolge min time spent = -2*sigma
+        maxim = directions_in_time[i]['time_spent'][1] #max time spent = 2*sigma
+        if minim == maxim: #in case if there is no time interval, artificially create it
+            minim = minim/2
+            maxim = 3*maxim/2
+        mean = np.mean(directions_in_time[i]['time_spent'])
+        std = (maxim-minim)/4 
+        #Z-score calc and finding of the potential probabl interval
+        z = (free_time-mean)/std
+        if -1<=z<=1:
+            probab = 0.341
+        elif -2<=z<-1 or 2>=z>1:
+            probab = 0.136
+        elif -3<=z<-2 or 3>=z>2:
+            probab =  0.021
         else:
-            print("Probability of visit is: 0.0%")
+            probab = 0.0013
+        # probab = stats.norm.pdf(z)
+        #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
+        all_probab.append(probab)
+        print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
 
-        entropy = stats.entropy([1,1,1,1,1,1,1,1,1,1,1,1,1,1], base=2)
-        
+    #test of input data correctness for entropy       
+    sum_all = sum(all_probab)
+    n_prob = list()
+    for i in all_probab:
+        n_prob.append(i/sum_all)
+    test = sum(n_prob)
+    print("Sum of normalized probabilities is: " + str(test))
+    entropy = stats.entropy(all_probab, base=2)
+    entropy_data = {'probabilities': all_probab, 'poi_entropy': entropy} #create dict to save entropy data
+    saveTempData(entropy_data, 'poi_entropy_data')
     return directions_in_time
 
 
@@ -293,50 +305,37 @@ def popTimes (placeID):
     return pop_times
 
 
-tracking_interval = 3600 #tracking interval is seconds when vehicle position send to the vehicle owner
-POI_visit_time = {'shopping_mall': 1200, 'restaurant': 2400}
-
-# poptimes = popTimes("")
-
 def testing_func():
-
     # [900,2700]
-    
-    entropy = stats.entropy([1,1,1,1,1,1,1,1,1,1,1,1,1,1], base=2)
     x = list()
     for i in range(90,180+1):
         x.append(i)
-    
     mean = np.mean(x)
     var = np.var(x)    
     std = np.std(x)
-
     free_time = 90
     #Z-score calc
     z = (free_time - mean) / std
-    probab = sp.stats.norm.pdf(z)
-   
+    probab = stats.norm.pdf(z)
     #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
     print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
-    
     n = (180-90)
-    
     free_time = 45
-    
     pmf_binominal = stats.binom.pmf(free_time, n, 0.5)
     pmf_poisson = stats.poisson.pmf(free_time, 45)
-   
     plt.hist(probab, normed=True, cumulative=True, label='CDF',
             histtype='step', alpha=0.8, color='k')
     plt.show()
-      
     count, bins, ignored = plt.hist(probab, 30, density=True)
     plt.plot(bins, 1/(std * np.sqrt(2 * np.pi)) * 
         np.exp( - (bins - mean)**2 / (2 * std**2) ),
         linewidth=2, color='r')
     plt.show()
 
-# testing_func()
+
+
+tracking_interval = 3600 #tracking interval is seconds when vehicle position send to the vehicle owner
+
 
 #############################################
 """get Direction and save them to temp file (useful to reduce amount of requests)"""
@@ -346,6 +345,6 @@ def testing_func():
 # directions = getNearPOIPolylines(directions, 1000)
 # directions = getWaypointsForPOI(getTempData('nearbyPOIs'))
 # directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
-# directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
-potentialVisitPOI(getTempData('potential_dest'))
+directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
+potentialVisitPOI(directions)
 #############################################

@@ -8,7 +8,8 @@ import numpy as np
 import scipy as sp
 from scipy import stats
 import matplotlib.pyplot as plt
-# from scipy.stats import entropy
+from sklearn import preprocessing
+
 
 def readGoogleAPI():
     """read Google API key from the apikey.txt file"""
@@ -19,11 +20,11 @@ def readGoogleAPI():
         return api_key
 
 
-def saveTempData(data_type, filename):
+def saveTempData(data, filename):
     """save temp data to disk"""
 
     with open(filename +'.temp', 'wb') as f:
-        pickle.dump(data_type, f)
+        pickle.dump(data, f)
         f.close()
     print("Data saved to "+ filename +".temp in working directory")
 
@@ -184,15 +185,6 @@ def getNearPOIPolylines(directions, max_radius):
     return directions
 
 
-def filterPOI():
-    """????select only POI that can be visited during free time"""
-    directions = getTempData('nearbyPOIs')
-    for i in range(len(directions)):
-        for j in range(len(directions[i]['polyline_coor_POI'])): 
-            directions[i]['polyline_coor_POI'][j][1] = directions[i]['polyline_coor_POI'][j][1]['results']
-    saveTempData(directions, 'nearbyPOIs')
-    return('POIs were filtered')
-
 def getPOIByType(POI_list, POI_type):
     """Find POI type"""
 
@@ -207,8 +199,8 @@ def getWaypointsForPOI(directions):
     """select (filter) potential waypoints from obtained list of POIs with help of getPOIByType(), 
     remove all unnecessary data. Add only POIs that have "time_spent" info and are in free time intertval"""
     
-    waypoint_list = list()
     for i in range(len(directions)):
+        waypoint_list = list()
         origin_addr = directions[i]['legs'][0]['start_address'] #update to directions without waypoints
         if len(directions[i]['legs']) == 1:
             destination_addr = directions[i]['legs'][0]['end_address'] #for directions without waypoints
@@ -231,8 +223,11 @@ def getWaypointsForPOI(directions):
                     #     time_spent = directions[i]['polyline_coor_POI'][j][1]['results'][k]['time_spent']
                     #     populartimes = directions[i]['polyline_coor_POI'][j][1]['results'][k]['populartimes']
                     #     waypoint_list.append(["place_id:" + waypoint, types, time_spent, populartimes])
-    destination_wayp_list = [origin_addr, destination_addr, waypoint_list]
-    saveTempData(destination_wayp_list,'dest_wayp_list')
+        destination_wayp_list = [origin_addr, destination_addr, waypoint_list]
+        directions[i].update({'dest_wayp_list': destination_wayp_list})
+        destinations = getDestinationViaPOI (destination_wayp_list)
+        directions[i].update({'all_destinations': destinations})
+    saveTempData(directions,'dest_wayp_list')
     print("Potential in time waypoints were obtained")
     return destination_wayp_list
 
@@ -245,9 +240,9 @@ def getDestinationViaPOI (destination_list):
     destination = list()
     for i in range(len(destination_list[2])):
         destination.extend(getDirections(destination_list[0], destination_list[1], destination_list[2][i][0]))
-        destination[i]['waypoint_types']=destination_list[2][i][1]
-        destination[i]['time_spent']=destination_list[2][i][2]
-        destination[i]['populartimes']=destination_list[2][i][3]
+        destination[i]['waypoint_types'] = destination_list[2][i][1]
+        destination[i]['time_spent'] = destination_list[2][i][2]
+        destination[i]['populartimes'] = destination_list[2][i][3]
     saveTempData(destination,'potential_dest')
       
     print("Potential directions via POI received")
@@ -255,46 +250,53 @@ def getDestinationViaPOI (destination_list):
 
 # getDestinationViaPOI(getTempData('dest_wayp_list'))
 
-def potentialVisitPOI (directions_in_time):
+def potentialVisitPOI (directions, tracking_interval=0):
     """calculate probability to visit POIs and overall entropy"""
 
+    if tracking_interval != 0:
+        directions = inTimeDirections(directions, tracking_interval)
     all_probab = list()
-    for i in range(len(directions_in_time)): 
-        free_time = directions_in_time[i]['overview_free_time']
+    for i in range(len(directions)): 
+        free_time = directions[i]['overview_free_time']
         # free_time = 1800
-        minim = directions_in_time[i]['time_spent'][0] #we guess that Goolge min time spent = -2*sigma
-        maxim = directions_in_time[i]['time_spent'][1] #max time spent = 2*sigma
-        if minim == maxim: #in case if there is no time interval, artificially create it
-            minim = minim/2
-            maxim = 3*maxim/2
-        mean = np.mean(directions_in_time[i]['time_spent'])
-        std = (maxim-minim)/4 
-        #Z-score calc and finding of the potential probabl interval
-        z = (free_time-mean)/std
-        if -1<=z<=1:
-            probab = 0.341
-        elif -2<=z<-1 or 2>=z>1:
-            probab = 0.136
-        elif -3<=z<-2 or 3>=z>2:
-            probab =  0.021
-        else:
-            probab = 0.0013
-        # probab = stats.norm.pdf(z)
-        #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
-        all_probab.append(probab)
-        print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
+        for j in range(len(directions[i]['all_destinations'])):
+            minim = directions[i]['all_destinations'][j]['time_spent'][0] #we guess that Goolge min time spent = -2*sigma
+            maxim = directions[i]['all_destinations'][j]['time_spent'][1] #max time spent = 2*sigma
+            if minim == maxim: #in case if there is no time interval, artificially create it
+                minim = minim/2
+                maxim = 3*maxim/2
+            mean = np.mean(directions[i]['all_destinations'][j]['time_spent'])
+            std = (maxim-minim)/4
+            #Z-score calc and finding of the potential probabl interval
+            z = (free_time-mean)/std
+            if -1<=z<=1:
+                probab = 0.341
+            elif -2<=z<-1 or 2>=z>1:
+                probab = 0.136
+            elif -3<=z<-2 or 3>=z>2:
+                probab =  0.021
+            else:
+                probab = 0.0013
+            directions[i]['all_destinations'][j]['dist_data'] = ({'mean': mean, 'std': std, 'zscore': z, 'probab': probab})
+            
+            #three sigma rule: m+s=68%, m+2s=95%, m+3s=99,7%
+            all_probab.append(probab)
+            print("Probability of visit is: "+ str(round(probab*100, 2)) +"%")
 
-    #test of input data correctness for entropy       
-    sum_all = sum(all_probab)
-    n_prob = list()
-    for i in all_probab:
-        n_prob.append(i/sum_all)
-    test = sum(n_prob)
-    print("Sum of normalized probabilities is: " + str(test))
-    entropy = stats.entropy(all_probab, base=2)
-    entropy_data = {'probabilities': all_probab, 'poi_entropy': entropy} #create dict to save entropy data
-    saveTempData(entropy_data, 'poi_entropy_data')
-    return directions_in_time
+        #find proportion to calc entropy       
+        sum_all = sum(all_probab)
+        n_prob = list()
+        for prob in all_probab:
+            n_prob.append(prob/sum_all)
+        #test of input data correctness for entropy
+        test = sum(n_prob)
+        print("Sum of probabilities is: " + str(test))
+        entropy = stats.entropy(all_probab, base=2)
+        entropy_data = {'probabilities': all_probab, 'direction_entropy': entropy} #create dict to save entropy data
+        directions[i].update(entropy_data)
+    
+    saveTempData(directions, 'direct_entropy_data')
+    return directions
 
 
 def popTimes (placeID):
@@ -334,7 +336,7 @@ def testing_func():
 
 
 
-tracking_interval = 3600 #tracking interval is seconds when vehicle position send to the vehicle owner
+tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
 
 #############################################
@@ -344,7 +346,10 @@ tracking_interval = 3600 #tracking interval is seconds when vehicle position sen
 # directions = decodePolylines(getTempData('directions'))
 # directions = getNearPOIPolylines(directions, 1000)
 # directions = getWaypointsForPOI(getTempData('nearbyPOIs'))
-# directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
-directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
-potentialVisitPOI(directions)
+# -----done in getWaypointsForPOI #directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
+# -----data available in directions #directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
+direction = potentialVisitPOI(getTempData('dest_wayp_list'), tracking_interval)
+saveTempData(direction, 'direct_entropy_data_'+ str(tracking_interval))
+get_directions = getTempData('direct_entropy_data_'+ str(tracking_interval))
+stop = 1 
 #############################################

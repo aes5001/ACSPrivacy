@@ -23,7 +23,7 @@ def readGoogleAPI():
 def saveTempData(data, filename):
     """save temp data to disk"""
 
-    with open(filename +'.temp', 'wb') as f:
+    with open(filename + '.temp', 'wb') as f:
         pickle.dump(data, f)
         f.close()
     print("Data saved to "+ filename +".temp in working directory")
@@ -37,6 +37,15 @@ def getTempData(filename):
         f.close()
     print("Data loaded from " + filename + ".temp in working directory")
     return data_file
+
+
+def saveAsText(data, filename):
+    """save printable data to text file"""
+
+    with open(filename + '.txt', "w") as text_file:
+        print(data, file=text_file)
+        text_file.close()
+    print("Data saved to "+ filename +".txt in working directory")
 
 
 def getDirections(origin_addr, destination_addr, waypoints_list=None):
@@ -255,8 +264,8 @@ def potentialVisitPOI (directions, tracking_interval=0):
 
     if tracking_interval != 0:
         directions = inTimeDirections(directions, tracking_interval)
-    all_probab = list()
     for i in range(len(directions)): 
+        all_probab = list()
         free_time = directions[i]['overview_free_time']
         # free_time = 1800
         for j in range(len(directions[i]['all_destinations'])):
@@ -291,10 +300,10 @@ def potentialVisitPOI (directions, tracking_interval=0):
         #test of input data correctness for entropy
         test = sum(n_prob)
         print("Sum of probabilities is: " + str(test))
-        entropy = stats.entropy(all_probab, base=2)
-        entropy_data = {'probabilities': all_probab, 'direction_entropy': entropy} #create dict to save entropy data
+        entropy = stats.entropy(n_prob, base=2)
+        entropy_data = {'probabilities': all_probab, 'normal_prob': n_prob, 'direction_entropy': entropy, 'tracking_interval': tracking_interval} #create dict to save entropy data
         directions[i].update(entropy_data)
-    
+
     saveTempData(directions, 'direct_entropy_data')
     return directions
 
@@ -335,6 +344,26 @@ def testing_func():
     plt.show()
 
 
+def printData(directions):
+    """Extract data to print"""
+
+    direction_out = str()
+    for i in range(len(directions)):
+        direction_out += "Direction " +str(i)+ "\n"
+        direction_out += "Distance: " + str(directions[i]['legs'][0]['distance']['value']) +" ("+directions[i]['legs'][0]['distance']['text']+")\n"
+        direction_out += "Duration: " + str(directions[i]['legs'][0]['duration']['value']) +" ("+directions[i]['legs'][0]['duration']['text']+")\n"
+        direction_out += "Free time: " + str(directions[i]['overview_free_time']) +"\n"
+        direction_out += "POI types: 'shopping_mall', 'restaurant'\n"
+        direction_out += "Amount of Potential POIs: " + str(len(directions[i]['all_destinations'])) +"\n"
+        direction_out += "Probabilities to visit POIs: " + str(directions[i]['probabilities']) +"\n"
+        direction_out += "Entropy: " + str(directions[i]['direction_entropy']) +"\n\n"
+    tracking = directions[0]['tracking_interval']
+    start_addr = directions[0]['legs'][0]['start_address']
+    end_addr = directions[0]['legs'][0]['end_address']
+    output = "Route has " +str(len(directions))+ " directions\nStart address: "+start_addr+"\nEnd address: "+end_addr+"\nTracking interval: "+str(tracking)+"\n\n"+ direction_out
+    saveAsText(output, 'output')
+    return True
+
 
 tracking_interval = 1200 #tracking interval is seconds when vehicle position send to the vehicle owner
 
@@ -348,8 +377,9 @@ tracking_interval = 1200 #tracking interval is seconds when vehicle position sen
 # directions = getWaypointsForPOI(getTempData('nearbyPOIs'))
 # -----done in getWaypointsForPOI #directions = getDestinationViaPOI(getTempData('dest_wayp_list'))
 # -----data available in directions #directions = inTimeDirections(getTempData('potential_dest'), tracking_interval)
-direction = potentialVisitPOI(getTempData('dest_wayp_list'), tracking_interval)
-saveTempData(direction, 'direct_entropy_data_'+ str(tracking_interval))
+# direction = potentialVisitPOI(getTempData('dest_wayp_list'), tracking_interval)
+# saveTempData(direction, 'direct_entropy_data_'+ str(tracking_interval))
 get_directions = getTempData('direct_entropy_data_'+ str(tracking_interval))
+printData(get_directions)
 stop = 1 
 #############################################
